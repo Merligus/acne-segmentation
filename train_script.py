@@ -1,3 +1,4 @@
+import re
 import os
 import cv2
 import numpy as np
@@ -26,6 +27,7 @@ import time  # To add timestamps
 
 # --- Configuration ---
 CHECKPOINT_DIR = "./checkpoint/"
+CHECKPOINT_PATH = "./checkpoint/best_model_unet_mobilenet_v2_epoch21_iou0.4414.pth"
 DATA_DIR = "./data/"
 IMAGES_DIR = os.path.join(DATA_DIR, "JPEGImages")
 MASKS_DIR = os.path.join(DATA_DIR, "mask")
@@ -40,7 +42,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Training Hyperparameters
 IMG_SIZE = (256, 256)  # Resize images/masks to this size
 BATCH_SIZE = 8
-EPOCHS = 25
+EPOCHS = 100
 LR = 0.001
 
 
@@ -272,6 +274,46 @@ model = smp.Unet(
     activation=ACTIVATION,  # Keep None for BCEWithLogitsLoss
 )
 model.to(DEVICE)
+if os.path.exists(CHECKPOINT_PATH):
+    print(f"Loading weights from checkpoint: {CHECKPOINT_PATH}")
+    try:
+        # Load the checkpoint dictionary
+        checkpoint = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
+
+        # Try to load the model state_dict
+        # Check if the checkpoint is the state_dict itself or a dictionary containing it
+        if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+            state_dict = checkpoint["model_state_dict"]
+            print("  -> Loaded 'model_state_dict' from checkpoint dictionary.")
+        elif (
+            isinstance(checkpoint, dict) and "state_dict" in checkpoint
+        ):  # Some frameworks use 'state_dict'
+            state_dict = checkpoint["state_dict"]
+            print("  -> Loaded 'state_dict' from checkpoint dictionary.")
+        else:
+            # Assume the checkpoint file *is* the state_dict
+            state_dict = checkpoint
+            print("  -> Loaded state_dict directly from checkpoint file.")
+
+        # Load the state dictionary into the model
+        # Set strict=False if you know some layers might be missing (e.g., classifier head)
+        # but for resuming training or loading exact weights, strict=True is safer.
+        missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=True)
+
+        if missing_keys:
+            print(f"  Warning: Missing keys in state_dict: {missing_keys}")
+        if unexpected_keys:
+            print(f"  Warning: Unexpected keys in state_dict: {unexpected_keys}")
+        if not missing_keys and not unexpected_keys:
+            print("  -> Weights loaded successfully into model.")
+
+    except Exception as e:
+        print(f"  Error loading checkpoint: {e}")
+        print("  Model weights will remain as initialized (e.g., from ImageNet).")
+
+else:
+    print(f"Checkpoint file not found at: {CHECKPOINT_PATH}")
+    print("Proceeding with initialized weights (e.g., ImageNet or random).")
 
 # --- Datasets & Dataloaders ---
 train_dataset = AcneDataset(
@@ -349,7 +391,20 @@ scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
 )
 
 # --- Training Loop ---
+# get the checkpoint iouscore, if it exists
 max_iou_score = 0.0
+if os.path.exists(CHECKPOINT_PATH):
+    pattern = r"iou(\d+\.\d+)\.pth$"
+
+    # --- Extract the number ---
+    
+    base_filename = os.path.basename(CHECKPOINT_PATH) # Get just the filename part
+    match = re.search(pattern, base_filename)
+
+    if match:
+        # group(1) gets the content of the first capturing group (parentheses)
+        iou_string = match.group(1)
+        max_iou_score = float(iou_string)
 history = {"train_loss": [], "valid_loss": [], "iou_score": [], "f1_score": []}
 start_time = time.time()
 
@@ -360,6 +415,7 @@ print(f"Image Size: {IMG_SIZE}")
 print(f"Batch Size: {BATCH_SIZE}")
 print(f"Epochs: {EPOCHS}")
 print(f"Learning Rate: {LR}")
+print(f"Max IoU Score: {max_iou_score:.4f}")
 print(f"-------------------------")
 
 for epoch in range(EPOCHS):
@@ -452,8 +508,8 @@ for epoch in range(EPOCHS):
     avg_valid_loss = valid_loss / len(valid_loader) if len(valid_loader) > 0 else 0
 
     history["valid_loss"].append(avg_valid_loss)
-    history["iou_score"].append(avg_iou)
-    history["f1_score"].append(avg_f1)
+    history["iou_score"].append(avg_iou.cpu())
+    history["f1_score"].append(avg_f1.cpu())
 
     # Update learning rate scheduler
     scheduler.step()  # CosineAnnealingLR steps each epoch
