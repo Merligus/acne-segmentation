@@ -42,7 +42,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Training Hyperparameters
 IMG_SIZE = (256, 256)  # Resize images/masks to this size
 BATCH_SIZE = 8
-EPOCHS = 100
+EPOCHS = 200
 LR = 0.001
 
 
