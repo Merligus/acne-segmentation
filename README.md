@@ -28,3 +28,18 @@ python evaluate_unet.py \
     --threshold 0.4 \
     --darken 0.4
 ```
+
+# Encoders
+
+- Slightly Heavier Mobile-Optimized:
+    - 'efficientnet-b0' through 'efficientnet-b4' (Start with b0 or b1 and increase if needed. Generally good balance.)
+
+- Standard ResNets (Proven performers):
+    - 'resnet18'
+    - 'resnet34' (Commonly used, good baseline)    
+    - 'resnet50' (More powerful, significantly more parameters)    
+
+- More Advanced CNNs:
+    - 'resnest50d' (ResNeSt variant, often performs well)
+    - 'seresnext50_32x4d' (SE-ResNeXt variant)
+    - 'convnext_tiny' or 'convnext_small' (More recent CNN architecture)    
