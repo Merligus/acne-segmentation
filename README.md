@@ -17,7 +17,7 @@ pip install segmentation-models-pytorch opencv-python pandas albumentations tqdm
 python train_script.py --architecture Unet --unet_encoder efficientnet-b4 --checkpoint ./checkpoint/best_model_unet_efficientnet-b4_epoch78_iou0.4648.pth --epochs 50 --lr 0.00001 --batch_size 8 --img_size 256 256
 
 # Train SegFormer (nvidia/segformer-b0...)
-python train_script.py --architecture SegFormer --segformer_model nvidia/segformer-b0-finetuned-ade-512-512 --epochs 50 --lr 6e-5 --batch_size 8 --img_size 512 512
+python train_script.py --architecture SegFormer --segformer_model nvidia/segformer-b1-finetuned-ade-512-512 --epochs 200 --lr 6e-5 --batch_size 8 --img_size 512 512
 ```
 
 # Inference
