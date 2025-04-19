@@ -7,13 +7,17 @@ conda create -n "AcneSegmentation" python=3.9 -y
 conda activate AcneSegmentation
 
 pip install torch torchvision torchaudio
-pip install segmentation-models-pytorch opencv-python pandas albumentations tqdm matplotlib
+pip install segmentation-models-pytorch opencv-python pandas albumentations tqdm matplotlib transformers
 ```
 
 # Train
 
 ```sh
-python train_script.py
+# Train Unet (efficientnet-b4)
+python train_script.py --architecture Unet --unet_encoder efficientnet-b4 --checkpoint ./checkpoint/best_model_unet_efficientnet-b4_epoch78_iou0.4648.pth --epochs 50 --lr 0.00001 --batch_size 8 --img_size 256 256
+
+# Train SegFormer (nvidia/segformer-b0...)
+python train_script.py --architecture SegFormer --segformer_model nvidia/segformer-b0-finetuned-ade-512-512 --epochs 50 --lr 6e-5 --batch_size 8 --img_size 256 256
 ```
 
 # Inference
@@ -27,19 +31,4 @@ python evaluate_unet.py \
     --img_size 256 256 \
     --threshold 0.4 \
     --darken 0.4
-```
-
-# Encoders
-
-- Slightly Heavier Mobile-Optimized:
-    - 'efficientnet-b0' through 'efficientnet-b4' (Start with b0 or b1 and increase if needed. Generally good balance.)
-
-- Standard ResNets (Proven performers):
-    - 'resnet18'
-    - 'resnet34' (Commonly used, good baseline)    
-    - 'resnet50' (More powerful, significantly more parameters)    
-
-- More Advanced CNNs:
-    - 'resnest50d' (ResNeSt variant, often performs well)
-    - 'seresnext50_32x4d' (SE-ResNeXt variant)
-    - 'convnext_tiny' or 'convnext_small' (More recent CNN architecture)    
+```   
