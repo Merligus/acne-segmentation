@@ -1,2 +1,2 @@
-*.jpg
-*.png
+data/*/*.jpg
+results/*.png
