@@ -13,6 +13,7 @@ from segmentation_models_pytorch.metrics import get_stats, iou_score, f1_score
 from tqdm.auto import tqdm
 import argparse
 import time
+import matplotlib.pyplot as plt
 
 # --- Conditional Import for SegFormer ---
 try:
@@ -304,9 +305,9 @@ valid_loader = DataLoader(
 # --- Process Images and Accumulate Stats ---
 processed_count = 0
 error_count = 0
-# Lists to store stats for overall metric calculation
 tp_list, fp_list, fn_list, tn_list = [], [], [], []
-inference_times = []  # Store inference times
+inference_times = []
+per_image_results = []  # [(filename, iou_score)]
 pbar_valid = tqdm(valid_loader, desc=f"Validation", leave=False)
 
 with torch.no_grad():  # Disable gradient calculation for inference
@@ -433,22 +434,18 @@ with torch.no_grad():  # Disable gradient calculation for inference
         output_path = os.path.join(OUTPUT_DIR, output_filename)
         cv2.imwrite(output_path, highlighted_image)
 
-        processed_count += 1  # Count successful processing for saving image
+        # Store per-image IoU if mask directory is provided
+        if INPUT_MASK_DIR:
+            # Calculate IoU for this image
+            tp_img = tp_list[-1]
+            fp_img = fp_list[-1]
+            fn_img = fn_list[-1]
+            tn_img = tn_list[-1]
+            iou_img = iou_score(tp_img, fp_img, fn_img, tn_img, reduction="micro").item()
+            # Store only filename and score, not the image
+            per_image_results.append((filename, iou_img))
 
-# Aggregate stats
-if tp_list:  # Check if any valid batches were processed
-    tp_agg = torch.cat(tp_list).sum()
-    fp_agg = torch.cat(fp_list).sum()
-    fn_agg = torch.cat(fn_list).sum()
-    tn_agg = torch.cat(tn_list).sum()
-    # Calculate metrics
-    avg_iou = iou_score(tp_agg, fp_agg, fn_agg, tn_agg, reduction="micro")
-    avg_f1 = f1_score(tp_agg, fp_agg, fn_agg, tn_agg, reduction="micro")
-else:
-    avg_iou = torch.tensor(0.0)
-    avg_f1 = torch.tensor(0.0)
-    print("Warning: No validation metrics calculated (loader empty or batch errors).")
-
+        processed_count += 1
 
 print(f"\n--- Inference Complete ---")
 print(f"Processed and saved images: {processed_count}")
@@ -471,6 +468,50 @@ if INPUT_MASK_DIR and tp_list:
     overall_f1 = f1_score(
         tp_total, fp_total, fn_total, tn_total, reduction="micro"
     ).item()
+
+    # Plot best and worst performing images
+    if per_image_results:
+        # Sort by IoU score
+        sorted_results = sorted(per_image_results, key=lambda x: x[1], reverse=True)
+        best_3 = sorted_results[:3]
+        worst_3 = sorted_results[-3:]
+
+        plt.figure(figsize=(15, 8))
+        plt.suptitle("Best and Worst Predictions by IoU", fontsize=16)
+
+        def plot_result(subplot_idx, fname, iou, best_or_worst):
+            # Load and process image only when needed for plotting
+            img_path = os.path.join(OUTPUT_DIR, f"{fname}_highlighted.png")
+            img = cv2.imread(img_path)
+            if img is None:
+                print(f"Warning: Could not load {img_path}")
+                return
+            plt.subplot(2, 3, subplot_idx)
+            plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+            plt.title(f'{best_or_worst} #{subplot_idx if subplot_idx <= 3 else subplot_idx-3}\nIoU: {iou:.4f}')
+            plt.axis('off')
+
+        # Plot in batches to manage memory
+        for i, (fname, iou) in enumerate(best_3, 1):
+            plot_result(i, fname, iou, "Best")
+            plt.gcf().canvas.flush_events()  # Force update
+
+        for i, (fname, iou) in enumerate(worst_3, 1):
+            plot_result(i+3, fname, iou, "Worst")
+            plt.gcf().canvas.flush_events()  # Force update
+
+        if MODEL_ARCHITECTURE == "Unet":
+            MODEL_NAME_FOR_SAVE = f"unet_{UNET_ENCODER}"
+        elif MODEL_ARCHITECTURE == "SegFormer":
+            MODEL_NAME = args.segformer_model
+            MODEL_NAME_FOR_SAVE = f"segformer_{MODEL_NAME.replace('/', '_')}"
+            
+        output_filename = f"best_worst_predictions_{MODEL_NAME_FOR_SAVE}.png"
+        plt.tight_layout()
+        plt.savefig(os.path.join(OUTPUT_DIR, output_filename))
+        plt.close('all')  # Explicitly close all figures
+        plt.clf()  # Clear current figure
+        print(f"\nBest/worst predictions visualization saved as {output_filename}")
 
     print(
         f"\n--- Evaluation Metrics (Overall for {len(tp_list)} images) ---"

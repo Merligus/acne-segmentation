@@ -1,4 +1,6 @@
 data/*/*.jpg
-results_*/*.png
+results*/*.png
 
 __pycache__
+
+!results*/best_worst_predictions*.png
