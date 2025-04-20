@@ -1,2 +1,4 @@
 data/*/*.jpg
 results_*/*.png
+
+__pycache__
