@@ -72,7 +72,7 @@ python evaluate.py \
 | Unet efficientnet-b7 | 256x256 | 257MB | 0.4594 | 0.6296 | 0.0414 |
 | Unet resnet34 | 256x256 | 93.3MB | 0.4549 | 0.6253 | 0.0088 |
 | Unet resnet50 | 256x256 | 124MB | 0.4500 | 0.6207 | 0.0110 |
-| SegFormer-b0 | 256x256 | 14.2MB | 0.4524 | 0.6230 | 0.1346 |
+| SegFormer-b0 | 512x512 | 14.2MB | 0.4683 | 0.6379 | 0.1346 |
 | SegFormer-b1 | 512x512 | 52.2MB | 0.4736 | 0.6428 | 0.0120 |
 
 ### Unet Mobilenet-V2
