@@ -1,4 +1,11 @@
+# Ignore common image files in subdirectories of data/
 data/*/*.jpg
+data/*/*.jpeg
+data/*/*.png
+data/*/*.gif
+data/*/*.bmp
+data/*/*.tiff
+data/*/*.webp
 results*/*.png
 
 __pycache__
