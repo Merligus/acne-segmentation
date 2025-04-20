@@ -20,7 +20,7 @@ python train_script.py --architecture Unet --unet_encoder efficientnet-b4 --chec
 python train_script.py --architecture SegFormer --segformer_model nvidia/segformer-b1-finetuned-ade-512-512 --checkpoint ./checkpoint/best_model_segformer_nvidia_segformer-b1-finetuned-ade-512-512_epoch45_iou0.4737.pth --epochs 50 --lr 6e-5 --batch_size 8 --img_size 512 512
 ```
 
-# Inference
+# Inference and Evaluation
 
 ```sh
 # Evaluate a Unet model
@@ -48,4 +48,4 @@ python evaluate.py \
     --img_size 512 512 \
     --threshold 0.5 \
     --darken 0.3
-```   
+```
