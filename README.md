@@ -43,7 +43,6 @@ python evaluate.py \
     --model ./checkpoint/best_model_segformer_nvidia_segformer-b1-finetuned-ade-512-512_epoch45_iou0.4737.pth \
     --input_txt ./data/with_mask_test.txt \
     --img_dir ./data/JPEGImages/ \
-    --mask_dir ./data/mask/ \
     --output_dir ./results/ \
     --img_size 512 512 \
     --threshold 0.5 \
