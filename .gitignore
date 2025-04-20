@@ -4,3 +4,4 @@ results*/*.png
 __pycache__
 
 !results*/best_worst_predictions*.png
+!results*/training_history*.png
