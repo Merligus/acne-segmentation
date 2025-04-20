@@ -31,7 +31,7 @@ DEFAULT_MODEL_ARCHITECTURE = "Unet"
 DEFAULT_MODEL_PATH = "./checkpoint/best_model_unet_mobilenet_v2_epoch118_iou0.4578.pth"
 DEFAULT_INPUT_TXT = "./data/with_mask_test.txt"
 DEFAULT_INPUT_IMG_DIR = "./data/JPEGImages/"
-DEFAULT_INPUT_MASK_DIR = "./data/mask/"  # Need mask directory for evaluation
+DEFAULT_INPUT_MASK_DIR = None
 DEFAULT_OUTPUT_DIR = "./results/"
 DEFAULT_IMG_SIZE = (256, 256)
 DEFAULT_UNET_ENCODER = "mobilenet_v2"
@@ -82,12 +82,11 @@ parser.add_argument(
     default=DEFAULT_INPUT_IMG_DIR,
     help=f"Base directory containing the images listed in input_txt. Default: {DEFAULT_INPUT_IMG_DIR}",
 )
-# Added mask_dir argument
 parser.add_argument(
     "--mask_dir",
     type=str,
     default=DEFAULT_INPUT_MASK_DIR,
-    help=f"Base directory containing the ground truth masks. Default: {DEFAULT_INPUT_MASK_DIR}",
+    help="Base directory containing the ground truth masks. If not provided, metrics won't be calculated.",
 )
 parser.add_argument(
     "--output_dir",
@@ -250,8 +249,9 @@ valid_dataset = AcneDataset(
     unet_encoder_weights="imagenet" if MODEL_ARCHITECTURE == "Unet" else None,
     target_img_size=IMG_SIZE,
     augmentation=transform_geom,
+    inference_mode=INPUT_MASK_DIR is None,  # Add inference_mode flag
 )
-print(f"Validation dataset size: {len(valid_dataset)}")
+print(f"Dataset size: {len(valid_dataset)}")
 
 if len(valid_dataset) == 0:
     print("Error: Dataset is empty. Please check file paths and content.")
@@ -266,30 +266,28 @@ def custom_collate_fn(batch):
     # Filter out None items that might be returned by __getitem__ on error
     batch = [item for item in batch if item is not None]
     if not batch:
-        # Return None if the batch is empty after filtering
-        # This needs to be handled in the training/validation loop
         return None
 
-    # Separate images and masks
-    images = [item[0] for item in batch]
-    masks = [item[1] for item in batch]
-
-    # Stack images and masks into batch tensors
-    # Ensure they are float32 before stacking
-    try:
-        images_batch = torch.stack([img.float() for img in images])
-        masks_batch = torch.stack([mask.float() for mask in masks])
-    except RuntimeError as e:
-        print(f"Error during torch.stack in custom_collate_fn: {e}")
-        # Print shapes for debugging if stacking fails (e.g., due to inconsistent sizes)
-        for i, img in enumerate(images):
-            print(f"Image {i} shape: {img.shape}")
-        for i, mask in enumerate(masks):
-            print(f"Mask {i} shape: {mask.shape}")
-        # Return None or raise error
-        return None  # Propagate error as None batch
-
-    return images_batch, masks_batch
+    # Check if we're in inference mode (single tensor) or evaluation mode (tuple)
+    if isinstance(batch[0], tuple):
+        # Evaluation mode - handle image and mask
+        images = [item[0] for item in batch]
+        masks = [item[1] for item in batch]
+        try:
+            images_batch = torch.stack([img.float() for img in images])
+            masks_batch = torch.stack([mask.float() for mask in masks])
+            return images_batch, masks_batch
+        except RuntimeError as e:
+            print(f"Error during torch.stack in custom_collate_fn: {e}")
+            return None
+    else:
+        # Inference mode - handle only images
+        try:
+            images_batch = torch.stack([img.float() for img in batch])
+            return images_batch
+        except RuntimeError as e:
+            print(f"Error during torch.stack in custom_collate_fn: {e}")
+            return None
 
 
 valid_loader = DataLoader(
@@ -316,9 +314,14 @@ with torch.no_grad():  # Disable gradient calculation for inference
                 f"Warning: Skipping validation batch {batch_idx} due to data loading error."
             )
             continue
-        images, masks_true = batch_data
+            
+        if INPUT_MASK_DIR:
+            images, masks_true = batch_data
+            masks_true = masks_true.to(DEVICE).float()
+        else:
+            images = batch_data
+            
         images = images.to(DEVICE).float()
-        masks_true = masks_true.to(DEVICE).float()
 
         # --- Conditional Forward Pass & Upsampling ---
         if MODEL_ARCHITECTURE == "Unet":
@@ -352,17 +355,19 @@ with torch.no_grad():  # Disable gradient calculation for inference
         # Threshold probabilities -> binary masks (0 or 1)
         masks_pred_binary = (masks_pred_prob > 0.5).long()
 
-        # Ensure masks_true is integer type for metrics
-        masks_true_int = masks_true.long()
+        # Only calculate metrics if mask directory is provided
+        if INPUT_MASK_DIR:
+            # Ensure masks_true is integer type for metrics
+            masks_true_int = masks_true.long()
 
-        # Calculate tp, fp, fn, tn for the batch
-        tp, fp, fn, tn = get_stats(masks_pred_binary, masks_true_int, mode="binary")
+            # Calculate tp, fp, fn, tn for the batch
+            tp, fp, fn, tn = get_stats(masks_pred_binary, masks_true_int, mode="binary")
 
-        # Append batch stats to lists
-        tp_list.append(tp)
-        fp_list.append(fp)
-        fn_list.append(fn)
-        tn_list.append(tn)
+            # Append batch stats to lists
+            tp_list.append(tp)
+            fp_list.append(fp)
+            fn_list.append(fn)
+            tn_list.append(tn)
 
         filename = valid_dataset.image_paths[batch_idx]
         image_orig = cv2.imread(filename)
@@ -446,7 +451,7 @@ print(f"Highlighted outputs saved to: {OUTPUT_DIR}")
 
 # --- Calculate and Print Overall Metrics ---
 # Check if any stats were accumulated (i.e., processing didn't fail for all images)
-if tp_list:
+if INPUT_MASK_DIR and tp_list:
     tp_total = torch.cat(tp_list).sum()
     fp_total = torch.cat(fp_list).sum()
     fn_total = torch.cat(fn_list).sum()
@@ -466,5 +471,7 @@ if tp_list:
     print(f"IoU Score (Jaccard): {overall_iou:.4f}")
     print(f"F1 Score (Dice):     {overall_f1:.4f}")
     print(f"------------------------------------")
+elif not INPUT_MASK_DIR:
+    print("\nNo mask directory provided - metrics were not calculated.")
 else:
     print("\nNo images were successfully processed for metric calculation.")

@@ -24,11 +24,13 @@ class AcneDataset(BaseDataset):
         unet_encoder_weights=None,  # Needed for SMP preprocessing
         target_img_size=(256, 256),
         augmentation=None,
+        inference_mode=False,
     ):
         self.image_paths = []
         self.mask_paths = []
         self.architecture = architecture
         self.target_img_size = target_img_size
+        self.inference_mode = inference_mode
         skipped_files = 0
 
         print(f"Reading file list from: {file_list_path}")
@@ -42,15 +44,22 @@ class AcneDataset(BaseDataset):
                     filename = parts[0]
 
                     img_path = os.path.join(images_dir, filename)
-                    base_name = os.path.splitext(filename)[0]
-                    mask_filename = base_name + ext
-                    mask_path = os.path.join(masks_dir, mask_filename)
-
-                    if os.path.exists(img_path) and os.path.exists(mask_path):
-                        self.image_paths.append(img_path)
-                        self.mask_paths.append(mask_path)
+                    
+                    if self.inference_mode:
+                        if os.path.exists(img_path):
+                            self.image_paths.append(img_path)
+                        else:
+                            skipped_files += 1
                     else:
-                        skipped_files += 1
+                        base_name = os.path.splitext(filename)[0]
+                        mask_filename = base_name + ext
+                        mask_path = os.path.join(masks_dir, mask_filename)
+
+                        if os.path.exists(img_path) and os.path.exists(mask_path):
+                            self.image_paths.append(img_path)
+                            self.mask_paths.append(mask_path)
+                        else:
+                            skipped_files += 1
         except FileNotFoundError:
             print(f"Error: File not found at {file_list_path}")
             raise
@@ -97,19 +106,24 @@ class AcneDataset(BaseDataset):
                 raise IOError(f"Could not read image: {self.image_paths[i]}")
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-            # Read mask - read as grayscale
-            mask = cv2.imread(self.mask_paths[i], cv2.IMREAD_GRAYSCALE)
-            if mask is None:
-                raise IOError(f"Could not read mask: {self.mask_paths[i]}")
+            # Only read mask if not in inference mode
+            if not self.inference_mode:
+                mask = cv2.imread(self.mask_paths[i], cv2.IMREAD_GRAYSCALE)
+                if mask is None:
+                    raise IOError(f"Could not read mask: {self.mask_paths[i]}")
 
-            if mask.ndim == 3:
-                mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
-            _, mask = cv2.threshold(mask, 127, 1, cv2.THRESH_BINARY)
+                if mask.ndim == 3:
+                    mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+                _, mask = cv2.threshold(mask, 127, 1, cv2.THRESH_BINARY)
 
             # Apply augmentations
             if self.augmentation:
-                sample = self.augmentation(image=image, mask=mask)
-                image, mask = sample["image"], sample["mask"]
+                if self.inference_mode:
+                    sample = self.augmentation(image=image)
+                    image = sample["image"]
+                else:
+                    sample = self.augmentation(image=image, mask=mask)
+                    image, mask = sample["image"], sample["mask"]
 
             # --- Apply Conditional Preprocessing ---
             if self.architecture == "Unet":
@@ -128,6 +142,9 @@ class AcneDataset(BaseDataset):
                 image = self.normalize_transform(image=image)["image"]
                 image = torch.from_numpy(image).permute(2, 0, 1).float()
 
+            if self.inference_mode:
+                return image
+
             # Mask to Tensor (common step)
             if mask.ndim == 2:
                 mask = np.expand_dims(mask, axis=0)  # 1, H, W
@@ -139,6 +156,9 @@ class AcneDataset(BaseDataset):
                 (3, self.target_img_size[0], self.target_img_size[1]),
                 dtype=torch.float32,
             )
+            if self.inference_mode:
+                return dummy_image
+            
             dummy_mask = torch.zeros(
                 (1, self.target_img_size[0], self.target_img_size[1]),
                 dtype=torch.float32,
