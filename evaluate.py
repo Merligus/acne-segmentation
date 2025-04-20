@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from segmentation_models_pytorch.metrics import get_stats, iou_score, f1_score
 from tqdm.auto import tqdm
 import argparse
+import time
 
 # --- Conditional Import for SegFormer ---
 try:
@@ -305,6 +306,7 @@ processed_count = 0
 error_count = 0
 # Lists to store stats for overall metric calculation
 tp_list, fp_list, fn_list, tn_list = [], [], [], []
+inference_times = []  # Store inference times
 pbar_valid = tqdm(valid_loader, desc=f"Validation", leave=False)
 
 with torch.no_grad():  # Disable gradient calculation for inference
@@ -324,14 +326,18 @@ with torch.no_grad():  # Disable gradient calculation for inference
         images = images.to(DEVICE).float()
 
         # --- Conditional Forward Pass & Upsampling ---
+        # Start timing
+        start_time = time.time()
         if MODEL_ARCHITECTURE == "Unet":
             masks_pred_logits = model(images)
-            # No upsampling needed for Unet if output matches target size
-            # If Unet output size differs, upsampling might be needed here too
-            upsampled_logits = masks_pred_logits  # Assume same size for now
+            upsampled_logits = masks_pred_logits
         elif MODEL_ARCHITECTURE == "SegFormer":
             outputs = model(pixel_values=images)
             masks_pred_logits = outputs.logits
+        # End timing and store
+        inference_times.append(time.time() - start_time)
+        
+        if MODEL_ARCHITECTURE == "SegFormer":
             # Upsample SegFormer logits for metrics/loss
             upsampled_logits = F.interpolate(
                 masks_pred_logits,
@@ -447,6 +453,7 @@ else:
 print(f"\n--- Inference Complete ---")
 print(f"Processed and saved images: {processed_count}")
 print(f"Skipped/Errors: {error_count}")
+print(f"Average inference time: {(sum(inference_times) / len(inference_times)):.4f} seconds")
 print(f"Highlighted outputs saved to: {OUTPUT_DIR}")
 
 # --- Calculate and Print Overall Metrics ---
