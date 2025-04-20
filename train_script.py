@@ -17,6 +17,8 @@ from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
 import time  # To add timestamps
 import argparse  # To handle command-line arguments
+import logging  # Import the logging module
+
 
 # --- Argument Parser
 parser = argparse.ArgumentParser(
@@ -117,6 +119,25 @@ IMG_SIZE = tuple(args.img_size)
 BATCH_SIZE = args.batch_size
 EPOCHS = args.epochs
 LR = args.lr if args.lr is not None else DEFAULT_LR  # Use specified LR or default
+
+# --- Logging Setup ---
+OUTPUT_DIR = "./results/"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+log_file_path = os.path.join(OUTPUT_DIR, f"logs_{MODEL_NAME_FOR_SAVE}.log")
+
+# Configure logging
+logging.basicConfig(
+    filename=log_file_path,
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+# Add a StreamHandler to also print to console
+console = logging.StreamHandler()
+console.setLevel(logging.INFO)
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+console.setFormatter(formatter)
+logging.getLogger("").addHandler(console)
 
 
 def custom_collate_fn(batch):
@@ -230,10 +251,10 @@ def get_validation_augmentation(img_size):
 
 
 # --- Model Definition (Conditional) ---
-print(f"--- Defining Model ---")
-print(f"Architecture: {MODEL_ARCHITECTURE}")
+logging.info(f"--- Defining Model ---")  # Use logging.info instead of print
+logging.info(f"Architecture: {MODEL_ARCHITECTURE}")
 if MODEL_ARCHITECTURE == "Unet":
-    print(f"Unet Encoder: {ENCODER}")
+    logging.info(f"Unet Encoder: {ENCODER}")
     model = smp.Unet(
         encoder_name=ENCODER,
         encoder_weights=ENCODER_WEIGHTS,
@@ -242,7 +263,7 @@ if MODEL_ARCHITECTURE == "Unet":
         activation=ACTIVATION,  # Keep None for BCEWithLogitsLoss
     )
 elif MODEL_ARCHITECTURE == "SegFormer":
-    print(f"SegFormer Model: {MODEL_NAME}")
+    logging.info(f"SegFormer Model: {MODEL_NAME}")
     try:
         model = SegformerForSemanticSegmentation.from_pretrained(
             MODEL_NAME,
@@ -252,7 +273,7 @@ elif MODEL_ARCHITECTURE == "SegFormer":
             ignore_mismatched_sizes=True,
         )
     except Exception as e:
-        print(f"Error initializing SegFormer: {e}")
+        logging.error(f"Error initializing SegFormer: {e}")
         exit()
 
 model.to(DEVICE)  # Move model to device AFTER definition
@@ -260,7 +281,7 @@ model.to(DEVICE)  # Move model to device AFTER definition
 # --- Load Checkpoint (Conditional Check) ---
 max_iou_score = 0.0
 if CHECKPOINT_PATH and os.path.exists(CHECKPOINT_PATH):
-    print(f"Loading weights from checkpoint: {CHECKPOINT_PATH}")
+    logging.info(f"Loading weights from checkpoint: {CHECKPOINT_PATH}")
     try:
         # Load the checkpoint dictionary
         checkpoint = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
@@ -269,12 +290,12 @@ if CHECKPOINT_PATH and os.path.exists(CHECKPOINT_PATH):
         # Check if the checkpoint is the state_dict itself or a dictionary containing it
         if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
             state_dict = checkpoint["model_state_dict"]
-            print("  -> Loaded 'model_state_dict' from checkpoint dictionary.")
+            logging.info("  -> Loaded 'model_state_dict' from checkpoint dictionary.")
         elif (
             isinstance(checkpoint, dict) and "state_dict" in checkpoint
         ):  # Some frameworks use 'state_dict'
             state_dict = checkpoint["state_dict"]
-            print("  -> Loaded 'state_dict' from checkpoint dictionary.")
+            logging.info("  -> Loaded 'state_dict' from checkpoint dictionary.")
 
         # Use strict=False for SegFormer due to head mismatch, strict=True might work for resuming Unet
         load_strict = MODEL_ARCHITECTURE == "Unet"
@@ -284,10 +305,10 @@ if CHECKPOINT_PATH and os.path.exists(CHECKPOINT_PATH):
         )
 
         if missing_keys:
-            print(f"  Warning: Missing keys in state_dict: {missing_keys}")
+            logging.warning(f"  Warning: Missing keys in state_dict: {missing_keys}")
         if unexpected_keys:
-            print(f"  Warning: Unexpected keys in state_dict: {unexpected_keys}")
-        print(f"  -> Weights loaded successfully into model (strict={load_strict}).")
+            logging.warning(f"  Warning: Unexpected keys in state_dict: {unexpected_keys}")
+        logging.info(f"  -> Weights loaded successfully into model (strict={load_strict}).")
 
         # Try to parse max_iou_score from filename
         pattern = r"iou(\d+\.\d+)\.pth$"
@@ -298,15 +319,15 @@ if CHECKPOINT_PATH and os.path.exists(CHECKPOINT_PATH):
                 max_iou_score = float(match.group(1))
             except:
                 pass  # Keep 0.0 if parsing fails
-            print(f"  -> Resuming with Max IoU Score: {max_iou_score:.4f}")
+            logging.info(f"  -> Resuming with Max IoU Score: {max_iou_score:.4f}")
 
     except Exception as e:
-        print(
+        logging.error(
             f"  Error loading checkpoint: {e}. Starting with initialized/pre-trained weights."
         )
 else:
-    print(f"No valid checkpoint path provided or found ({CHECKPOINT_PATH}).")
-    print("Starting with initialized/pre-trained weights.")
+    logging.info(f"No valid checkpoint path provided or found ({CHECKPOINT_PATH}).")
+    logging.info("Starting with initialized/pre-trained weights.")
 
 
 # --- Datasets & Dataloaders ---
@@ -409,23 +430,23 @@ scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
 history = {"train_loss": [], "valid_loss": [], "iou_score": [], "f1_score": []}
 start_time = time.time()
 
-print(f"\n--- Starting Training ---")
-print(f"Architecture: {MODEL_ARCHITECTURE}")
+logging.info(f"\n--- Starting Training ---")
+logging.info(f"Architecture: {MODEL_ARCHITECTURE}")
 if MODEL_ARCHITECTURE == "Unet":
-    print(f"Unet Encoder: {ENCODER}")
+    logging.info(f"Unet Encoder: {ENCODER}")
 if MODEL_ARCHITECTURE == "SegFormer":
-    print(f"SegFormer Model: {MODEL_NAME}")
-print(f"Device: {DEVICE}")
-print(f"Image Size: {IMG_SIZE}")
-print(f"Batch Size: {BATCH_SIZE}")
-print(f"Epochs: {EPOCHS}")
-print(f"Initial Learning Rate: {LR}")
-print(f"Resuming with Max IoU: {max_iou_score:.4f}")
-print(f"-------------------------")
+    logging.info(f"SegFormer Model: {MODEL_NAME}")
+logging.info(f"Device: {DEVICE}")
+logging.info(f"Image Size: {IMG_SIZE}")
+logging.info(f"Batch Size: {BATCH_SIZE}")
+logging.info(f"Epochs: {EPOCHS}")
+logging.info(f"Initial Learning Rate: {LR}")
+logging.info(f"Resuming with Max IoU: {max_iou_score:.4f}")
+logging.info(f"-------------------------")
 
 for epoch in range(EPOCHS):
     epoch_start_time = time.time()
-    print(f"\nEpoch: {epoch+1}/{EPOCHS}")
+    logging.info(f"\nEpoch: {epoch+1}/{EPOCHS}")
 
     # --- Training Phase ---
     model.train()
@@ -434,7 +455,7 @@ for epoch in range(EPOCHS):
 
     for batch_idx, batch_data in enumerate(pbar_train):
         if batch_data is None:
-            print(
+            logging.warning(
                 f"Warning: Skipping training batch {batch_idx} due to data loading error."
             )
             continue
@@ -471,7 +492,7 @@ for epoch in range(EPOCHS):
     with torch.no_grad():
         for batch_idx, batch_data in enumerate(pbar_valid):
             if batch_data is None:
-                print(
+                logging.warning(
                     f"Warning: Skipping validation batch {batch_idx} due to data loading error."
                 )
                 continue
@@ -499,7 +520,7 @@ for epoch in range(EPOCHS):
                 if upsampled_logits.shape[1] == 2:
                     upsampled_logits = upsampled_logits[:, 1:2, :, :]
                 elif upsampled_logits.shape[1] != 1:
-                    print(
+                    logging.warning(
                         f"Warning: Skipping metrics val batch {batch_idx}, unexpected SegFormer channels: {upsampled_logits.shape[1]}"
                     )
                     continue  # Skip metrics calculation for this batch
@@ -539,7 +560,7 @@ for epoch in range(EPOCHS):
     else:
         avg_iou = torch.tensor(0.0)
         avg_f1 = torch.tensor(0.0)
-        print(
+        logging.warning(
             "Warning: No validation metrics calculated (loader empty or batch errors)."
         )
 
@@ -554,13 +575,13 @@ for epoch in range(EPOCHS):
 
     # Print epoch summary
     epoch_time = time.time() - epoch_start_time
-    print(f"Epoch {epoch+1} Summary:")
-    print(f"  Train Loss: {avg_train_loss:.4f}")
-    print(f"  Valid Loss: {avg_valid_loss:.4f}")
-    print(f"  Valid IoU:  {avg_iou:.4f}")
-    print(f"  Valid F1:   {avg_f1:.4f}")
-    print(f"  LR:         {optimizer.param_groups[0]['lr']:.6f}")  # Corrected LR access
-    print(f"  Time:       {epoch_time:.2f}s")
+    logging.info(f"Epoch {epoch+1} Summary:")
+    logging.info(f"  Train Loss: {avg_train_loss:.4f}")
+    logging.info(f"  Valid Loss: {avg_valid_loss:.4f}")
+    logging.info(f"  Valid IoU:  {avg_iou:.4f}")
+    logging.info(f"  Valid F1:   {avg_f1:.4f}")
+    logging.info(f"  LR:         {optimizer.param_groups[0]['lr']:.6f}")  # Corrected LR access
+    logging.info(f"  Time:       {epoch_time:.2f}s")
 
     # Save best model based on IoU score
     current_iou = avg_iou.item()
@@ -571,9 +592,9 @@ for epoch in range(EPOCHS):
         SAVE_PATH = os.path.join(CHECKPOINT_DIR, model_save_path)
         os.makedirs(CHECKPOINT_DIR, exist_ok=True)
         torch.save(model.state_dict(), SAVE_PATH)
-        print(f"  >> Model Saved: {SAVE_PATH} (IoU: {max_iou_score:.4f})")
+        logging.info(f"  >> Model Saved: {SAVE_PATH} (IoU: {max_iou_score:.4f})")
     else:
-        print(f"  (IoU did not improve from {max_iou_score:.4f})")
+        logging.info(f"  (IoU did not improve from {max_iou_score:.4f})")
 
     # --- Plotting History ---
     if epoch % 5 == 0 or epoch == EPOCHS - 1:
@@ -601,13 +622,13 @@ for epoch in range(EPOCHS):
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         history_plot_path = os.path.join(OUTPUT_DIR, output_filename)
         plt.savefig(history_plot_path)
-        print(f"Training history plot saved to: {history_plot_path}")
+        logging.info(f"Training history plot saved to: {history_plot_path}")
         # plt.show()
 
 # --- Final Summary & Plotting ---
 total_training_time = time.time() - start_time
-print(f"\n--- Training Finished ---")
-print(
+logging.info(f"\n--- Training Finished ---")
+logging.info(
     f"Total Time: {total_training_time // 3600:.0f}h {(total_training_time % 3600) // 60:.0f}m {total_training_time % 60:.2f}s"
 )
-print(f"Best Validation IoU for {MODEL_ARCHITECTURE}: {max_iou_score:.4f}")
+logging.info(f"Best Validation IoU for {MODEL_ARCHITECTURE}: {max_iou_score:.4f}")
