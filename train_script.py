@@ -574,7 +574,7 @@ for epoch in range(EPOCHS):
         print(f"  >> Model Saved: {SAVE_PATH} (IoU: {max_iou_score:.4f})")
     else:
         print(f"  (IoU did not improve from {max_iou_score:.4f})")
-    
+
     # --- Plotting History ---
     if epoch % 5 == 0 or epoch == EPOCHS - 1:
         plt.figure(figsize=(12, 5))
@@ -596,7 +596,10 @@ for epoch in range(EPOCHS):
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
-        history_plot_path = f"training_history_{MODEL_NAME_FOR_SAVE}.png"
+        OUTPUT_DIR = "./results/"
+        output_filename = f"training_history_{MODEL_NAME_FOR_SAVE}.png"
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        history_plot_path = os.path.join(OUTPUT_DIR, output_filename)
         plt.savefig(history_plot_path)
         print(f"Training history plot saved to: {history_plot_path}")
         # plt.show()
