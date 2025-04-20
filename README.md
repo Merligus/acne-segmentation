@@ -17,13 +17,13 @@ pip install segmentation-models-pytorch opencv-python pandas albumentations tqdm
 python train_script.py --architecture Unet --unet_encoder efficientnet-b4 --checkpoint ./checkpoint/best_model_unet_efficientnet-b4_epoch78_iou0.4648.pth --epochs 50 --lr 0.00001 --batch_size 8 --img_size 256 256
 
 # Train SegFormer (nvidia/segformer-b0...)
-python train_script.py --architecture SegFormer --segformer_model nvidia/segformer-b1-finetuned-ade-512-512 --epochs 200 --lr 6e-5 --batch_size 8 --img_size 512 512
+python train_script.py --architecture SegFormer --segformer_model nvidia/segformer-b1-finetuned-ade-512-512 --checkpoint ./checkpoint/best_model_segformer_nvidia_segformer-b1-finetuned-ade-512-512_epoch45_iou0.4737.pth --epochs 50 --lr 6e-5 --batch_size 8 --img_size 512 512
 ```
 
 # Inference
 
 ```sh
-python evaluate_unet.py \
+python evaluate.py \
     --model ./checkpoint/best_model_unet_mobilenet_v2_epoch118_iou0.4578.pth \
     --input_txt ./data/with_mask_test.txt \
     --img_dir ./data/JPEGImages/ \
@@ -31,4 +31,30 @@ python evaluate_unet.py \
     --img_size 256 256 \
     --threshold 0.4 \
     --darken 0.4
+
+# Evaluate a Unet model
+python evaluate.py \
+    --architecture Unet \
+    --unet_encoder mobilenet_v2 \
+    --model ./checkpoint/best_model_unet_mobilenet_v2_epoch118_iou0.4578.pth \
+    --input_txt ./data/with_mask_test.txt \
+    --img_dir ./data/JPEGImages/ \
+    --mask_dir ./data/mask/ \
+    --output_dir ./results_unet/ \
+    --img_size 256 256 \
+    --threshold 0.5 \
+    --darken 0.3
+
+# Evaluate a SegFormer model
+python evaluate.py \
+    --architecture SegFormer \
+    --segformer_model nvidia/segformer-b1-finetuned-ade-512-512 \
+    --model ./checkpoint/best_model_segformer_nvidia_segformer-b1-finetuned-ade-512-512_epoch45_iou0.4737.pth \
+    --input_txt ./data/with_mask_test.txt \
+    --img_dir ./data/JPEGImages/ \
+    --mask_dir ./data/mask/ \
+    --output_dir ./results_segformer/ \
+    --img_size 512 512 \
+    --threshold 0.5 \
+    --darken 0.3
 ```   
